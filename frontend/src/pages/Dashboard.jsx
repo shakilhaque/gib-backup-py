@@ -5,11 +5,12 @@
  *  1. Stat cards (clickable – filter logs on click)
  *  2. Failed Backups panel (only when failures exist)
  *  3. Backup Logs table with:
- *       • Date picker  – filter logs to a specific backup date
- *       • Status tabs  – All / Success / Failed
- *       • Latest Only  – show only the most recent log per device
- *       • Date grouping – rows grouped under a date header
- *       • Clear Date    – delete all logs for the selected date
+ *       • Pagination     – 25 logs per page
+ *       • Date picker    – filter logs to a specific backup date
+ *       • Status tabs    – All / Success / Failed
+ *       • Latest Only    – show only the most recent log per device
+ *       • Date grouping  – rows grouped under a date header
+ *       • Clear Logs     – flexible log deletion modal
  *
  * Auto-refreshes every 10 seconds.
  */
@@ -20,6 +21,7 @@ import Spinner from "../components/Spinner";
 import ClearLogsModal from "../components/ClearLogsModal";
 
 const POLL_INTERVAL = 10_000;
+const PAGE_SIZE     = 25;
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 function triggerDownload(blob, filename) {
@@ -38,9 +40,7 @@ function triggerDownload(blob, filename) {
  */
 function parseUTC(d) {
   if (!d) return new Date();
-  // Already has timezone info — use as-is
   if (d.endsWith("Z") || d.includes("+")) return new Date(d);
-  // No timezone suffix — backend sent UTC without 'Z', so add it
   return new Date(d + "Z");
 }
 
@@ -58,12 +58,10 @@ function fmtTime(d) {
 function groupByDate(logs) {
   const groups = {};
   logs.forEach((log) => {
-    // Use parseUTC so grouping is based on local date, not UTC date
-    const key = parseUTC(log.timestamp).toLocaleDateString("en-CA"); // YYYY-MM-DD
+    const key = parseUTC(log.timestamp).toLocaleDateString("en-CA");
     if (!groups[key]) groups[key] = [];
     groups[key].push(log);
   });
-  // Return sorted newest-first
   return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a));
 }
 
@@ -80,16 +78,19 @@ function latestPerDevice(logs) {
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 export default function Dashboard() {
-  const [stats,      setStats]      = useState(null);
-  const [logs,       setLogs]       = useState([]);
-  const [dates,      setDates]      = useState([]);   // all distinct backup dates
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
+  const [stats,   setStats]   = useState(null);
+  const [logs,    setLogs]    = useState([]);
+  const [dates,   setDates]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
 
   // Filters
-  const [selectedDate, setSelectedDate] = useState("");      // "" = all dates
-  const [filter,       setFilter]       = useState("all");   // all|success|failure
+  const [selectedDate, setSelectedDate] = useState("");
+  const [filter,       setFilter]       = useState("all");
   const [latestOnly,   setLatestOnly]   = useState(false);
+
+  // Pagination
+  const [page, setPage] = useState(1);
 
   // Clear modal
   const [showClear, setShowClear] = useState(false);
@@ -100,7 +101,7 @@ export default function Dashboard() {
   // ── Fetch ──────────────────────────────────────────────────────────────
   const fetchAll = useCallback(async () => {
     try {
-      const params = { limit: 500 };
+      const params = { limit: 5000 };
       if (selectedDate) params.log_date = selectedDate;
 
       const [s, l, d] = await Promise.all([
@@ -111,7 +112,6 @@ export default function Dashboard() {
       setStats(s);
       setLogs(l);
       setDates(d);
-      // Collect distinct group names from logs for the clear modal
       setGroups([...new Set(l.map((log) => log.group_name).filter(Boolean))].sort());
       setError(null);
     } catch (e) {
@@ -127,20 +127,27 @@ export default function Dashboard() {
     return () => clearInterval(id);
   }, [fetchAll]);
 
+  // Reset to page 1 when any filter changes
+  useEffect(() => { setPage(1); }, [filter, selectedDate, latestOnly]);
+
   // ── Derived ────────────────────────────────────────────────────────────
   const failedLogs = logs.filter((l) => l.status === "failure");
 
-  // Apply status filter
   let displayLogs =
     filter === "success" ? logs.filter((l) => l.status === "success") :
     filter === "failure" ? failedLogs :
     logs;
 
-  // Apply latest-only toggle
   if (latestOnly) displayLogs = latestPerDevice(displayLogs);
 
-  // Group by date for rendering
-  const groupedLogs = groupByDate(displayLogs);
+  // Pagination math
+  const totalLogs  = displayLogs.length;
+  const totalPages = Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
+  const safePage   = Math.min(page, totalPages);
+  const pagedLogs  = displayLogs.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Group only the current page's logs by date
+  const groupedLogs = groupByDate(pagedLogs);
 
   // ── Actions ────────────────────────────────────────────────────────────
   const scrollToLogs = (f) => {
@@ -154,13 +161,6 @@ export default function Dashboard() {
     setLogs((prev) => prev.filter((l) => l.id !== id));
   };
 
-  const handleClearDate = async () => {
-    if (!selectedDate) return;
-    if (!confirm(`Delete ALL logs for ${fmtDate(selectedDate + "T00:00:00")}?`)) return;
-    await clearLogsByDate(selectedDate);
-    fetchAll();
-  };
-
   const handleDownload = async (log) => {
     try {
       const blob     = await downloadBackup(log.id);
@@ -169,6 +169,11 @@ export default function Dashboard() {
     } catch {
       alert("File not available for download.");
     }
+  };
+
+  const goToPage = (p) => {
+    setPage(Math.max(1, Math.min(p, totalPages)));
+    logsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   if (loading) return <Spinner text="Loading dashboard…" />;
@@ -211,7 +216,7 @@ export default function Dashboard() {
               <span style={{ width: 10, height: 10, borderRadius: "50%", background: "var(--error)", display: "inline-block", animation: "pulse 1.5s ease-in-out infinite" }} />
               <span style={{ fontWeight: 700, fontSize: 15, color: "var(--error)" }}>Failed Backups</span>
             </div>
-            <span className="badge badge-error">{failedLogs.length} device(s) failed</span>
+            <span className="badge badge-error">{failedLogs.length} Device(s) Failed</span>
           </div>
           <div className="table-wrap">
             <table>
@@ -250,11 +255,7 @@ export default function Dashboard() {
           {/* Title + Clear button */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>Backup Logs</div>
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={() => setShowClear(true)}
-              title="Clear log entries"
-            >
+            <button className="btn btn-danger btn-sm" onClick={() => setShowClear(true)} title="Clear log entries">
               🗑 Clear Logs
             </button>
           </div>
@@ -270,20 +271,9 @@ export default function Dashboard() {
             >
               <option value="">All Dates</option>
               {dates.map((d) => (
-                <option key={d} value={d}>
-                  {fmtDate(d + "T00:00:00")}
-                </option>
+                <option key={d} value={d}>{fmtDate(d + "T00:00:00")}</option>
               ))}
             </select>
-            {selectedDate && (
-              <button
-                className="btn btn-danger btn-sm"
-                title={`Delete all logs for ${fmtDate(selectedDate + "T00:00:00")}`}
-                onClick={handleClearDate}
-              >
-                🗑 Clear Date
-              </button>
-            )}
           </div>
 
           {/* Spacer */}
@@ -303,9 +293,9 @@ export default function Dashboard() {
           {/* Status filter tabs */}
           <div style={{ display: "flex", gap: 5 }}>
             {[
-              { key: "all",     label: `All (${logs.length})`,                                  cls: "btn-primary"  },
-              { key: "success", label: `✓ Success (${logs.filter(l=>l.status==="success").length})`, cls: "btn-success" },
-              { key: "failure", label: `✗ Failed (${failedLogs.length})`,                        cls: "btn-danger"  },
+              { key: "all",     label: `All (${logs.length})`,                                       cls: "btn-primary" },
+              { key: "success", label: `✓ Success (${logs.filter(l => l.status === "success").length})`, cls: "btn-success" },
+              { key: "failure", label: `✗ Failed (${failedLogs.length})`,                             cls: "btn-danger"  },
             ].map((tab) => (
               <button
                 key={tab.key}
@@ -318,105 +308,118 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Log count summary ── */}
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-          Showing <strong style={{ color: "var(--text)" }}>{displayLogs.length}</strong> log(s)
-          {selectedDate && <> for <strong style={{ color: "var(--primary)" }}>{fmtDate(selectedDate + "T00:00:00")}</strong></>}
-          {latestOnly    && <> · <strong style={{ color: "var(--primary)" }}>Latest only</strong></>}
+        {/* ── Log count + pagination summary ── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Showing <strong style={{ color: "var(--text)" }}>
+              {totalLogs === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, totalLogs)}
+            </strong> of <strong style={{ color: "var(--text)" }}>{totalLogs}</strong> log(s)
+            {selectedDate && <> · <strong style={{ color: "var(--primary)" }}>{fmtDate(selectedDate + "T00:00:00")}</strong></>}
+            {latestOnly   && <> · <strong style={{ color: "var(--primary)" }}>Latest only</strong></>}
+          </div>
+          {totalPages > 1 && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              Page <strong style={{ color: "var(--text)" }}>{safePage}</strong> of <strong style={{ color: "var(--text)" }}>{totalPages}</strong>
+            </div>
+          )}
         </div>
 
         {/* ── Table grouped by date ── */}
         {displayLogs.length === 0 ? (
           <div className="empty">No logs found for the selected filters.</div>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Device IP</th>
-                  <th>Group</th>
-                  <th>Auth</th>
-                  <th>Status</th>
-                  <th>Message</th>
-                  <th>Time</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedLogs.map(([dateKey, dateLogs]) => (
-                  <>
-                    {/* ── Date separator row ── */}
-                    <tr key={`sep-${dateKey}`}>
-                      <td
-                        colSpan={7}
-                        style={{
-                          background: "var(--surface2)",
-                          padding: "6px 14px",
-                          fontWeight: 700,
-                          fontSize: 12,
-                          color: "var(--primary)",
-                          letterSpacing: "0.5px",
-                          borderTop: "2px solid var(--border)",
-                        }}
-                      >
-                        📅 {fmtDate(dateKey + "T00:00:00")}
-                        <span style={{ fontWeight: 400, color: "var(--text-muted)", marginLeft: 12 }}>
-                          {dateLogs.length} log(s) · {dateLogs.filter(l => l.status === "success").length} success · {dateLogs.filter(l => l.status === "failure").length} failed
-                        </span>
-                      </td>
-                    </tr>
-
-                    {/* ── Log rows for this date ── */}
-                    {dateLogs.map((log) => (
-                      <tr
-                        key={log.id}
-                        style={log.status === "failure" ? { background: "rgba(239,68,68,.03)" } : {}}
-                      >
+          <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Device IP</th>
+                    <th>Group</th>
+                    <th>Auth</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                    <th>Time</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {groupedLogs.map(([dateKey, dateLogs]) => (
+                    <>
+                      {/* ── Date separator row ── */}
+                      <tr key={`sep-${dateKey}`}>
                         <td
-                          className="monospace"
-                          style={log.status === "failure" ? { color: "var(--error)", fontWeight: 600 } : {}}
-                        >
-                          {log.device_ip || "—"}
-                        </td>
-                        <td>{log.group_name}</td>
-                        <td>
-                          <span className={`badge badge-${log.auth_type}`}>
-                            {log.auth_type === "non_tacacs" ? "Non-Tacacs" : "Tacacs"}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={`badge badge-${log.status === "success" ? "success" : "error"}`}>
-                            {log.status}
-                          </span>
-                        </td>
-                        <td
-                          title={log.message || ""}
+                          colSpan={7}
                           style={{
-                            maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            cursor: log.message ? "help" : "default",
-                            color: log.status === "failure" ? "var(--error)" : "inherit",
+                            background: "var(--surface2)",
+                            padding: "6px 14px",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            color: "var(--primary)",
+                            letterSpacing: "0.5px",
+                            borderTop: "2px solid var(--border)",
                           }}
                         >
-                          {log.message || "—"}
-                        </td>
-                        <td style={{ whiteSpace: "nowrap", color: "var(--text-muted)", fontSize: 12 }}>
-                          {fmtTime(log.timestamp)}
-                        </td>
-                        <td>
-                          <div className="flex-gap">
-                            {log.backup_path && log.status === "success" && (
-                              <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(log)} title="Download">↓</button>
-                            )}
-                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(log.id)} title="Delete">×</button>
-                          </div>
+                          📅 {fmtDate(dateKey + "T00:00:00")}
+                          <span style={{ fontWeight: 400, color: "var(--text-muted)", marginLeft: 12 }}>
+                            {dateLogs.length} log(s) · {dateLogs.filter(l => l.status === "success").length} success · {dateLogs.filter(l => l.status === "failure").length} failed
+                          </span>
                         </td>
                       </tr>
-                    ))}
-                  </>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+                      {/* ── Log rows for this date ── */}
+                      {dateLogs.map((log) => (
+                        <tr
+                          key={log.id}
+                          style={log.status === "failure" ? { background: "rgba(239,68,68,.03)" } : {}}
+                        >
+                          <td className="monospace" style={log.status === "failure" ? { color: "var(--error)", fontWeight: 600 } : {}}>
+                            {log.device_ip || "—"}
+                          </td>
+                          <td>{log.group_name}</td>
+                          <td>
+                            <span className={`badge badge-${log.auth_type}`}>
+                              {log.auth_type === "non_tacacs" ? "Non-Tacacs" : "Tacacs"}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`badge badge-${log.status === "success" ? "success" : "error"}`}>
+                              {log.status}
+                            </span>
+                          </td>
+                          <td
+                            title={log.message || ""}
+                            style={{
+                              maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              cursor: log.message ? "help" : "default",
+                              color: log.status === "failure" ? "var(--error)" : "inherit",
+                            }}
+                          >
+                            {log.message || "—"}
+                          </td>
+                          <td style={{ whiteSpace: "nowrap", color: "var(--text-muted)", fontSize: 12 }}>
+                            {fmtTime(log.timestamp)}
+                          </td>
+                          <td>
+                            <div className="flex-gap">
+                              {log.backup_path && log.status === "success" && (
+                                <button className="btn btn-ghost btn-sm" onClick={() => handleDownload(log)} title="Download">↓</button>
+                              )}
+                              <button className="btn btn-danger btn-sm" onClick={() => handleDelete(log.id)} title="Delete">×</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Pagination controls ── */}
+            {totalPages > 1 && (
+              <Pagination current={safePage} total={totalPages} onChange={goToPage} />
+            )}
+          </>
         )}
       </div>
 
@@ -427,7 +430,6 @@ export default function Dashboard() {
         }
       `}</style>
 
-      {/* ── Clear Logs Modal ── */}
       {showClear && (
         <ClearLogsModal
           dates={dates}
@@ -437,6 +439,56 @@ export default function Dashboard() {
         />
       )}
     </>
+  );
+}
+
+/* ── Pagination component ────────────────────────────────────────────────── */
+function Pagination({ current, total, onChange }) {
+  /** Build the page number list with "…" gaps */
+  const pages = [];
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (current > 3)          pages.push("…");
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i);
+    if (current < total - 2)  pages.push("…");
+    pages.push(total);
+  }
+
+  const btn = (content, page, disabled = false, active = false) => (
+    <button
+      key={content + "-" + page}
+      onClick={() => !disabled && page && onChange(page)}
+      disabled={disabled}
+      style={{
+        minWidth: 34,
+        height: 34,
+        padding: "0 10px",
+        borderRadius: "var(--radius)",
+        border: active ? "none" : "1px solid var(--border)",
+        background: active ? "var(--primary)" : disabled ? "transparent" : "var(--surface2)",
+        color: active ? "#fff" : disabled ? "var(--text-muted)" : "var(--text)",
+        fontWeight: active ? 700 : 400,
+        fontSize: 13,
+        cursor: disabled ? "default" : "pointer",
+        transition: "background .15s",
+      }}
+    >
+      {content}
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+      {btn("← Prev", current - 1, current === 1)}
+      {pages.map((p, i) =>
+        p === "…"
+          ? <span key={`ellipsis-${i}`} style={{ color: "var(--text-muted)", fontSize: 13, padding: "0 4px" }}>…</span>
+          : btn(p, p, false, p === current)
+      )}
+      {btn("Next →", current + 1, current === total)}
+    </div>
   );
 }
 

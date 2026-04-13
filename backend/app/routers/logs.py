@@ -75,7 +75,7 @@ def list_logs(
     device_ip:  Optional[str] = Query(None),
     status:     Optional[str] = Query(None),
     log_date:   Optional[str] = Query(None, description="Filter by date YYYY-MM-DD"),
-    limit:  int = Query(200, le=1000),
+    limit:  int = Query(500, le=10000),
     offset: int = Query(0),
     db: Session = Depends(get_db),
 ):
