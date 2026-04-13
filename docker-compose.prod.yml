@@ -1,0 +1,72 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════
+#  PRODUCTION Docker Compose – AWS / Linux Server
+#
+#  Usage:
+#    docker compose -f docker-compose.prod.yml up -d --build
+#
+#  Required: create a .env file next to this file (see .env.prod.example)
+# ══════════════════════════════════════════════════════
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: gib_postgres
+    restart: always
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-backup_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backup_pass}
+      POSTGRES_DB:       ${POSTGRES_DB:-backup_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"       # NOT exposed to public internet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-backup_user} -d ${POSTGRES_DB:-backup_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gib_backend
+    restart: always
+    environment:
+      DATABASE_URL:       postgresql://${POSTGRES_USER:-backup_user}:${POSTGRES_PASSWORD:-backup_pass}@postgres:5432/${POSTGRES_DB:-backup_db}
+      SECRET_KEY:         ${SECRET_KEY}
+      BACKUP_BASE_DIR:    /app/backups
+      SSH_TIMEOUT:        ${SSH_TIMEOUT:-30}
+      SSH_BANNER_TIMEOUT: ${SSH_BANNER_TIMEOUT:-60}
+      SSH_AUTH_TIMEOUT:   ${SSH_AUTH_TIMEOUT:-30}
+      DEFAULT_FTP_IP:     ${DEFAULT_FTP_IP:-10.69.10.11}
+    volumes:
+      - gib_backups:/app/backups    # named volume; persists backup files
+    ports:
+      - "127.0.0.1:8000:8000"       # NOT exposed to public internet
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── React Frontend (nginx) ──────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gib_frontend
+    restart: always
+    ports:
+      - "0.0.0.0:80:80"             # publicly accessible on port 80 (HTTP)
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+    driver: local
+  gib_backups:
+    driver: local
