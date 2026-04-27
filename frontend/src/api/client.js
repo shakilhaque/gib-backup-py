@@ -1,20 +1,39 @@
 /**
  * Axios instance pre-configured with the API base URL.
- * In production (Docker) requests go through nginx → /api → backend.
- * In development the vite proxy rewrites /api → http://localhost:8000.
+ * Automatically attaches the JWT token from localStorage.
+ * On 401 → clears token and redirects to login.
  */
 import axios from "axios";
 
 const client = axios.create({
   baseURL: "/api",
-  timeout: 120_000, // 2 min – SSH backup runs can be slow
+  timeout: 120_000,
   headers: { "Content-Type": "application/json" },
 });
 
-// Global response interceptor – normalise error messages
+// ── Request interceptor: attach JWT token ─────────────────────────────────────
+client.interceptors.request.use((config) => {
+  const token = localStorage.getItem("gib_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// ── Response interceptor: normalise errors + handle 401 ──────────────────────
 client.interceptors.response.use(
   (res) => res,
   (err) => {
+    // On 401 (expired / invalid token) → force re-login
+    if (err.response?.status === 401) {
+      localStorage.removeItem("gib_token");
+      localStorage.removeItem("gib_user");
+      // Avoid redirect loop if already on login page
+      if (!window.location.pathname.includes("/login")) {
+        window.location.href = "/login";
+      }
+    }
+
     const detail = err.response?.data?.detail;
     if (detail) {
       err.message = Array.isArray(detail)

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.backup_log import BackupLog
 from app.models.schedule import Schedule
+from app.models.user import User
 from app.schemas.backup import (
     BackupRunRequest,
     BackupRunResponse,
@@ -26,15 +27,19 @@ from app.schemas.backup import (
     ScheduleResponse,
 )
 from app.services import backup_service, scheduler_service
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/backup", tags=["Backup"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("/run", response_model=BackupRunResponse)
-def run_backup_now(request: BackupRunRequest, db: Session = Depends(get_db)):
+def run_backup_now(
+    request: BackupRunRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Immediately run backup for all devices matching (group_name, auth_type)."""
-    # Validate FTP credentials when FTP mode is selected
     if request.backup_mode.value == "ftp":
         missing = [f for f in ["ftp_ip", "ftp_username", "ftp_password"]
                    if not getattr(request, f)]
@@ -44,17 +49,19 @@ def run_backup_now(request: BackupRunRequest, db: Session = Depends(get_db)):
                 detail=f"FTP mode requires: {', '.join(missing)}",
             )
     try:
-        return backup_service.run_backup(request, db)
+        return backup_service.run_backup(request, db, run_by=current_user.username)
     except Exception as exc:
         logger.error("Backup run failed: %s\n%s", exc, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/schedule", response_model=ScheduleResponse, status_code=201)
-def schedule_backup(request: BackupScheduleRequest, db: Session = Depends(get_db)):
+def schedule_backup(
+    request: BackupScheduleRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     """Create a recurring backup schedule (cron job)."""
-
-    # ── Validate FTP credentials when FTP mode selected ───────────────────
     if request.backup_mode.value == "ftp":
         missing = [f for f in ["ftp_ip", "ftp_username", "ftp_password"]
                    if not getattr(request, f)]
@@ -64,7 +71,6 @@ def schedule_backup(request: BackupScheduleRequest, db: Session = Depends(get_db
                 detail=f"FTP mode requires: {', '.join(missing)}",
             )
 
-    # ── Validate cron fields ──────────────────────────────────────────────
     try:
         hour   = int(request.cron_hour)
         minute = int(request.cron_minute)
@@ -77,31 +83,37 @@ def schedule_backup(request: BackupScheduleRequest, db: Session = Depends(get_db
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
-    # ── Create schedule ───────────────────────────────────────────────────
     try:
-        schedule = scheduler_service.create_schedule(request, db)
-        return schedule
+        return scheduler_service.create_schedule(request, db)
     except Exception as exc:
         logger.error("Schedule creation failed: %s\n%s", exc, traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create schedule: {str(exc)}",
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to create schedule: {str(exc)}")
 
 
 @router.get("/schedules", response_model=list[ScheduleResponse])
-def list_schedules(db: Session = Depends(get_db)):
+def list_schedules(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     return db.query(Schedule).order_by(Schedule.id.desc()).all()
 
 
 @router.delete("/schedules/{schedule_id}", status_code=204)
-def delete_schedule(schedule_id: int, db: Session = Depends(get_db)):
+def delete_schedule(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     if not scheduler_service.delete_schedule(schedule_id, db):
         raise HTTPException(status_code=404, detail="Schedule not found")
 
 
 @router.patch("/schedules/{schedule_id}/toggle", response_model=ScheduleResponse)
-def toggle_schedule(schedule_id: int, db: Session = Depends(get_db)):
+def toggle_schedule(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     schedule = scheduler_service.toggle_schedule(schedule_id, db)
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -109,7 +121,11 @@ def toggle_schedule(schedule_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/download/{log_id}")
-def download_backup(log_id: int, db: Session = Depends(get_db)):
+def download_backup(
+    log_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     """Download a saved backup file (local mode only)."""
     log = db.query(BackupLog).filter(BackupLog.id == log_id).first()
     if not log:

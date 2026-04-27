@@ -16,19 +16,21 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.device import AuthType, Device
+from app.models.user import User
 from app.schemas.device import (
     BulkDeviceCreate,
     DeviceCreate,
     DeviceResponse,
     DeviceUpdate,
 )
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("", response_model=DeviceResponse, status_code=status.HTTP_201_CREATED)
-def create_device(payload: DeviceCreate, db: Session = Depends(get_db)):
+def create_device(payload: DeviceCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Add a new device.  IP must be unique."""
     if db.query(Device).filter(Device.ip_address == payload.ip_address).first():
         raise HTTPException(
@@ -44,7 +46,7 @@ def create_device(payload: DeviceCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/bulk", status_code=status.HTTP_201_CREATED)
-def bulk_create_devices(payload: BulkDeviceCreate, db: Session = Depends(get_db)):
+def bulk_create_devices(payload: BulkDeviceCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """
     Add multiple devices in one request.
     Returns a summary of created vs skipped (duplicate IP) entries.
@@ -70,6 +72,7 @@ def list_devices(
     group_name: Optional[str] = Query(None),
     auth_type: Optional[AuthType] = Query(None),
     db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
 ):
     """List devices with optional filtering by group_name and/or auth_type."""
     query = db.query(Device)
@@ -81,14 +84,14 @@ def list_devices(
 
 
 @router.get("/groups", response_model=list[str])
-def list_groups(db: Session = Depends(get_db)):
+def list_groups(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Return all distinct group names (for dropdowns)."""
     rows = db.query(Device.group_name).distinct().order_by(Device.group_name).all()
     return [r[0] for r in rows]
 
 
 @router.get("/{device_id}", response_model=DeviceResponse)
-def get_device(device_id: int, db: Session = Depends(get_db)):
+def get_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -96,7 +99,7 @@ def get_device(device_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{device_id}", response_model=DeviceResponse)
-def update_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(get_db)):
+def update_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
@@ -120,7 +123,7 @@ def update_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(g
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_device(device_id: int, db: Session = Depends(get_db)):
+def delete_device(device_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

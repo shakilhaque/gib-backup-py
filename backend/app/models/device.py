@@ -22,12 +22,13 @@ class AuthType(str, enum.Enum):
 class Device(Base):
     __tablename__ = "devices"
 
-    id = Column(Integer, primary_key=True, index=True)
-    ip_address = Column(String(45), unique=True, nullable=False, index=True)
-    group_name = Column(String(128), nullable=False, index=True)
-    auth_type = Column(SAEnum(AuthType), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    id          = Column(Integer, primary_key=True, index=True)
+    ip_address  = Column(String(45),  unique=True, nullable=False, index=True)
+    device_name = Column(String(100), nullable=True)   # optional human-readable label
+    group_name  = Column(String(128), nullable=False, index=True)
+    auth_type   = Column(SAEnum(AuthType), nullable=False)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationship to logs (one device → many logs)
     logs = relationship("BackupLog", back_populates="device", cascade="all, delete-orphan")

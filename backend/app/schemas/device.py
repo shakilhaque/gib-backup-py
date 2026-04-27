@@ -24,9 +24,10 @@ def _validate_ip(v: str) -> str:
 
 # ── Request schemas ────────────────────────────────────────────────────────────
 class DeviceCreate(BaseModel):
-    ip_address: str
-    group_name: str
-    auth_type: AuthType
+    ip_address:  str
+    device_name: Optional[str] = None   # optional label
+    group_name:  str
+    auth_type:   AuthType
 
     @field_validator("ip_address")
     @classmethod
@@ -41,11 +42,20 @@ class DeviceCreate(BaseModel):
             raise ValueError("group_name must not be empty")
         return v
 
+    @field_validator("device_name")
+    @classmethod
+    def clean_device_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            return v if v else None
+        return None
+
 
 class DeviceUpdate(BaseModel):
-    ip_address: Optional[str] = None
-    group_name: Optional[str] = None
-    auth_type: Optional[AuthType] = None
+    ip_address:  Optional[str]      = None
+    device_name: Optional[str]      = None
+    group_name:  Optional[str]      = None
+    auth_type:   Optional[AuthType] = None
 
     @field_validator("ip_address")
     @classmethod
@@ -57,9 +67,10 @@ class DeviceUpdate(BaseModel):
 
 # ── Bulk upload schema ─────────────────────────────────────────────────────────
 class BulkDeviceEntry(BaseModel):
-    ip_address: str
-    group_name: str
-    auth_type: AuthType
+    ip_address:  str
+    device_name: Optional[str] = None
+    group_name:  str
+    auth_type:   AuthType
 
     @field_validator("ip_address")
     @classmethod
@@ -73,11 +84,12 @@ class BulkDeviceCreate(BaseModel):
 
 # ── Response schemas ───────────────────────────────────────────────────────────
 class DeviceResponse(BaseModel):
-    id: int
-    ip_address: str
-    group_name: str
-    auth_type: AuthType
-    created_at: datetime
-    updated_at: datetime
+    id:          int
+    ip_address:  str
+    device_name: Optional[str]
+    group_name:  str
+    auth_type:   AuthType
+    created_at:  datetime
+    updated_at:  datetime
 
     model_config = {"from_attributes": True}

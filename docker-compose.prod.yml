@@ -61,7 +61,7 @@ services:
     container_name: gib_frontend
     restart: always
     ports:
-      - "0.0.0.0:80:80"             # publicly accessible on port 80 (HTTP)
+      - "8081:80"             # publicly accessible on port 80 (HTTP)
     depends_on:
       - backend
 

@@ -18,7 +18,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.backup_log import BackupLog, BackupStatus
 from app.models.device import Device
+from app.models.user import User
 from app.schemas.log import DashboardStats, LogResponse
+from app.services.auth_service import get_current_user
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
 
@@ -45,7 +47,7 @@ def _apply_filters(query, group_name, status, log_date, device_ip):
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 @router.get("/dates", response_model=list[str])
-def list_log_dates(db: Session = Depends(get_db)):
+def list_log_dates(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Return all distinct dates (YYYY-MM-DD) that have backup logs, newest first."""
     rows = (
         db.query(cast(BackupLog.timestamp, Date))
@@ -63,6 +65,7 @@ def count_logs(
     status:     Optional[str] = Query(None),
     log_date:   Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
 ):
     """Return how many logs match the given filters. Used as a preview before clearing."""
     query = _apply_filters(db.query(func.count(BackupLog.id)), group_name, status, log_date, device_ip)
@@ -78,6 +81,7 @@ def list_logs(
     limit:  int = Query(500, le=10000),
     offset: int = Query(0),
     db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
 ):
     """Return backup logs newest-first with optional filters."""
     query = _apply_filters(db.query(BackupLog), group_name, status, log_date, device_ip)
@@ -85,7 +89,7 @@ def list_logs(
 
 
 @router.get("/dashboard", response_model=DashboardStats)
-def dashboard_stats(db: Session = Depends(get_db)):
+def dashboard_stats(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     total_devices = db.query(func.count(Device.id)).scalar() or 0
     total_backups = db.query(func.count(BackupLog.id)).scalar() or 0
     success_count = (
@@ -109,6 +113,7 @@ def clear_logs(
     log_date:   Optional[str] = Query(None),
     clear_all:  bool          = Query(False, description="Set true to delete ALL logs"),
     db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
 ):
     """
     Delete logs matching the provided filters.
@@ -128,7 +133,7 @@ def clear_logs(
 
 
 @router.delete("/{log_id}", status_code=204)
-def delete_log(log_id: int, db: Session = Depends(get_db)):
+def delete_log(log_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     log = db.query(BackupLog).filter(BackupLog.id == log_id).first()
     if log:
         db.delete(log)

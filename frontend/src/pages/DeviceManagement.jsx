@@ -20,7 +20,7 @@ const AUTH_TYPES = [
   { value: "non_tacacs", label: "Non-Tacacs" },
 ];
 
-const EMPTY_FORM = { ip_addresses: "", group_name: "", auth_type: "tacacs" };
+const EMPTY_FORM = { ip_addresses: "", device_name: "", group_name: "", auth_type: "tacacs" };
 
 /** Parse a raw string of IPs (newlines, commas, semicolons) into a clean array. */
 function parseIPs(raw) {
@@ -82,13 +82,13 @@ export default function DeviceManagement() {
   /** Open Add modal pre-filled with the group + auth type of an existing device row. */
   const openAddToGroup = (device) => {
     setEditDevice(null);
-    setForm({ ip_addresses: "", group_name: device.group_name, auth_type: device.auth_type });
+    setForm({ ip_addresses: "", device_name: "", group_name: device.group_name, auth_type: device.auth_type });
     setShowModal(true);
   };
 
   const openEdit = (device) => {
     setEditDevice(device);
-    setForm({ ip_addresses: device.ip_address, group_name: device.group_name, auth_type: device.auth_type });
+    setForm({ ip_addresses: device.ip_address, device_name: device.device_name || "", group_name: device.group_name, auth_type: device.auth_type });
     setShowModal(true);
   };
 
@@ -100,9 +100,10 @@ export default function DeviceManagement() {
       if (editDevice) {
         // Edit: always single IP
         await updateDevice(editDevice.id, {
-          ip_address: form.ip_addresses.trim(),
-          group_name: form.group_name,
-          auth_type: form.auth_type,
+          ip_address:  form.ip_addresses.trim(),
+          device_name: form.device_name.trim() || null,
+          group_name:  form.group_name,
+          auth_type:   form.auth_type,
         });
         flash("Device updated.");
       } else {
@@ -111,7 +112,7 @@ export default function DeviceManagement() {
 
         if (ips.length === 1) {
           // Single device
-          await createDevice({ ip_address: ips[0], group_name: form.group_name, auth_type: form.auth_type });
+          await createDevice({ ip_address: ips[0], device_name: form.device_name.trim() || null, group_name: form.group_name, auth_type: form.auth_type });
           flash("Device added.");
         } else {
           // Multiple IPs → bulk endpoint
@@ -241,6 +242,7 @@ export default function DeviceManagement() {
                 <tr>
                   <th>#</th>
                   <th>IP Address</th>
+                  <th>Device Name</th>
                   <th>Group Name</th>
                   <th>Auth Type</th>
                   <th>Added</th>
@@ -252,6 +254,7 @@ export default function DeviceManagement() {
                   <tr key={d.id}>
                     <td style={{ color: "var(--text-muted)" }}>{i + 1}</td>
                     <td className="monospace">{d.ip_address}</td>
+                    <td style={{ color: d.device_name ? "var(--text)" : "var(--text-muted)", fontSize: 13 }}>{d.device_name || "—"}</td>
                     <td>{d.group_name}</td>
                     <td>
                       <span className={`badge badge-${d.auth_type}`}>
@@ -331,6 +334,18 @@ export default function DeviceManagement() {
                     required
                   />
                 )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">
+                  Device Name
+                  <span style={{ fontWeight: 400, color: "var(--text-muted)" }}> — optional label (e.g. Core-SW-01)</span>
+                </label>
+                <input
+                  className="form-control"
+                  placeholder="e.g. Core-Switch-01"
+                  value={form.device_name}
+                  onChange={(e) => setForm({ ...form, device_name: e.target.value })}
+                />
               </div>
               <div className="form-group">
                 <label className="form-label">Group Name *</label>

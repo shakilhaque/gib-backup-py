@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 MAX_WORKERS = 5
 
 
-def run_backup(request: BackupRunRequest, db: Session) -> BackupRunResponse:
+def run_backup(request: BackupRunRequest, db: Session, run_by: str = "scheduler") -> BackupRunResponse:
     """
     Execute a backup for all devices matching (group_name, auth_type).
 
@@ -85,6 +85,7 @@ def run_backup(request: BackupRunRequest, db: Session) -> BackupRunResponse:
             status=BackupStatus.success if res.status == "success" else BackupStatus.failure,
             message=res.message,
             backup_path=res.backup_path,
+            run_by=run_by,
         )
         db.add(log)
     db.commit()

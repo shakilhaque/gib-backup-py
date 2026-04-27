@@ -338,6 +338,7 @@ export default function Dashboard() {
                     <th>Auth</th>
                     <th>Status</th>
                     <th>Message</th>
+                    <th>Run By</th>
                     <th>Time</th>
                     <th></th>
                   </tr>
@@ -389,12 +390,20 @@ export default function Dashboard() {
                           <td
                             title={log.message || ""}
                             style={{
-                              maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                               cursor: log.message ? "help" : "default",
                               color: log.status === "failure" ? "var(--error)" : "inherit",
                             }}
                           >
                             {log.message || "—"}
+                          </td>
+                          <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                            {log.run_by
+                              ? <span style={{ color: log.run_by === "scheduler" ? "var(--text-muted)" : "var(--primary)", fontWeight: log.run_by !== "scheduler" ? 600 : 400 }}>
+                                  {log.run_by === "scheduler" ? "⏰ scheduler" : `👤 ${log.run_by}`}
+                                </span>
+                              : <span style={{ color: "var(--text-muted)" }}>—</span>
+                            }
                           </td>
                           <td style={{ whiteSpace: "nowrap", color: "var(--text-muted)", fontSize: 12 }}>
                             {fmtTime(log.timestamp)}

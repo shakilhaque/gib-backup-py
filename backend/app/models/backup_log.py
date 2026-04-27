@@ -27,10 +27,11 @@ class BackupLog(Base):
     group_name = Column(String(128), nullable=False)
     auth_type = Column(String(32), nullable=False)
 
-    status = Column(SAEnum(BackupStatus), nullable=False)
-    message = Column(Text, nullable=True)          # error detail or success note
-    backup_path = Column(String(512), nullable=True)  # local path or FTP path
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    status      = Column(SAEnum(BackupStatus), nullable=False)
+    message     = Column(Text, nullable=True)             # error detail or success note
+    backup_path = Column(String(512), nullable=True)      # local path or FTP path
+    run_by      = Column(String(100), nullable=True)      # username who triggered the backup
+    timestamp   = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     # Relationship back to device (nullable because device may be deleted)
     device = relationship("Device", back_populates="logs")
