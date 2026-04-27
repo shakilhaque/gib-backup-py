@@ -36,7 +36,28 @@ def get_db():
 
 
 def init_db() -> None:
-    """Create all tables that do not yet exist."""
+    """Create all tables that do not yet exist, then apply column migrations."""
     # Import models so SQLAlchemy registers them with the metadata.
-    from app.models import device, backup_log, schedule  # noqa: F401
+    from app.models import device, backup_log, schedule, user  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _run_migrations()
+
+
+def _run_migrations() -> None:
+    """
+    Apply ALTER TABLE migrations for columns added after initial deployment.
+    Uses IF NOT EXISTS so it is safe to run on every startup.
+    """
+    migrations = [
+        # v2: add run_by to backup_logs
+        "ALTER TABLE backup_logs ADD COLUMN IF NOT EXISTS run_by VARCHAR(100)",
+        # v2: add device_name to devices
+        "ALTER TABLE devices ADD COLUMN IF NOT EXISTS device_name VARCHAR(100)",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(__import__("sqlalchemy").text(sql))
+            except Exception:
+                pass  # column may already exist on SQLite (no IF NOT EXISTS support)
+        conn.commit()
