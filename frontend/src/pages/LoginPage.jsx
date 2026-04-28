@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { login } from "../api/auth";
+import gibLogo from "../assets/gib-logo.png";
 
 export default function LoginPage({ onLogin }) {
   const [form,    setForm]    = useState({ username: "", password: "" });
@@ -31,18 +32,20 @@ export default function LoginPage({ onLogin }) {
 
         {/* Brand */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 28, fontWeight: 800, color: "var(--primary)", letterSpacing: "-0.5px" }}>
-            GIB Backup
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
-            Cisco Config System
+          <img
+            src={gibLogo}
+            alt="GIB Logo"
+            style={{ width: 140, marginBottom: 16, display: "block", margin: "0 auto 16px" }}
+          />
+          <div style={{ fontSize: 26, fontWeight: 800, color: "var(--primary)", letterSpacing: "-0.5px" }}>
+            GIB Backup System
           </div>
         </div>
 
         {/* Card */}
         <div className="card">
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Sign In</div>
-          <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 24 }}>
+          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6, textAlign: "center" }}>Sign In</div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 24, textAlign: "center" }}>
             Enter your credentials to access the system
           </div>
 
@@ -57,7 +60,7 @@ export default function LoginPage({ onLogin }) {
               <label className="form-label">Username</label>
               <input
                 className="form-control"
-                placeholder="admin"
+                placeholder="Username"
                 value={form.username}
                 onChange={(e) => setForm(f => ({ ...f, username: e.target.value }))}
                 autoFocus
@@ -83,7 +86,7 @@ export default function LoginPage({ onLogin }) {
               className="btn btn-primary"
               type="submit"
               disabled={loading}
-              style={{ width: "100%", marginTop: 8, padding: "10px 0", fontSize: 15 }}
+              style={{ width: "100%", marginTop: 8, padding: "10px 0", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}
             >
               {loading
                 ? <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Signing in…</>
@@ -91,12 +94,6 @@ export default function LoginPage({ onLogin }) {
               }
             </button>
           </form>
-
-          <div style={{ marginTop: 20, padding: "12px 14px", background: "rgba(59,130,246,.08)", borderRadius: "var(--radius)", fontSize: 12, color: "var(--text-muted)" }}>
-            <strong style={{ color: "var(--text)" }}>Default credentials:</strong><br />
-            Username: <code>admin</code> &nbsp;·&nbsp; Password: <code>admin123</code><br />
-            <span style={{ color: "var(--error)" }}>Change your password after first login.</span>
-          </div>
         </div>
       </div>
     </div>

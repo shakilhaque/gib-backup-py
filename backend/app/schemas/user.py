@@ -4,7 +4,7 @@ Pydantic schemas for User and Auth.
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.models.user import UserRole
 
@@ -30,6 +30,14 @@ class UserCreate(BaseModel):
     role:      UserRole = UserRole.staff
     is_active: bool = True
 
+    @field_validator("email", "full_name", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v if v else None
+        return v
+
 
 class UserUpdate(BaseModel):
     full_name: Optional[str]      = None
@@ -37,6 +45,14 @@ class UserUpdate(BaseModel):
     password:  Optional[str]      = None
     role:      Optional[UserRole] = None
     is_active: Optional[bool]     = None
+
+    @field_validator("email", "full_name", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            return v if v else None
+        return v
 
 
 class UserResponse(BaseModel):

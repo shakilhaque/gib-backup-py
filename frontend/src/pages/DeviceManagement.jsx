@@ -6,6 +6,7 @@
  *  - Add single device via modal
  *  - Bulk paste multiple IPs
  *  - Edit / Delete
+ *  - Pagination (25 per page)
  */
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -21,6 +22,7 @@ const AUTH_TYPES = [
 ];
 
 const EMPTY_FORM = { ip_addresses: "", device_name: "", group_name: "", auth_type: "tacacs" };
+const PAGE_SIZE  = 25;
 
 /** Parse a raw string of IPs (newlines, commas, semicolons) into a clean array. */
 function parseIPs(raw) {
@@ -40,6 +42,9 @@ export default function DeviceManagement() {
   // Filters
   const [filterGroup, setFilterGroup] = useState("");
   const [filterAuth, setFilterAuth]   = useState("");
+
+  // Pagination
+  const [page, setPage] = useState(1);
 
   // Single-device modal
   const [showModal, setShowModal]   = useState(false);
@@ -71,6 +76,17 @@ export default function DeviceManagement() {
   }, [filterGroup, filterAuth]);
 
   useEffect(() => { fetchDevices(); }, [fetchDevices]);
+
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setPage(1); }, [filterGroup, filterAuth]);
+
+  /* ── Pagination ─────────────────────────────────────────────────── */
+  const totalDevices = devices.length;
+  const totalPages   = Math.max(1, Math.ceil(totalDevices / PAGE_SIZE));
+  const safePage     = Math.min(page, totalPages);
+  const pagedDevices = devices.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const goToPage = (p) => setPage(Math.max(1, Math.min(p, totalPages)));
 
   /* ── Single device CRUD ─────────────────────────────────── */
   const openAdd = () => {
@@ -151,7 +167,6 @@ export default function DeviceManagement() {
     setBulkSaving(true);
     setError(null);
     try {
-      // Parse pasted text: one IP per line, ignore blanks
       const ips = bulkText
         .split(/[\n,;]+/)
         .map((s) => s.trim())
@@ -236,50 +251,71 @@ export default function DeviceManagement() {
         ) : devices.length === 0 ? (
           <div className="empty">No devices found. Add one to get started.</div>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>IP Address</th>
-                  <th>Device Name</th>
-                  <th>Group Name</th>
-                  <th>Auth Type</th>
-                  <th>Added</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {devices.map((d, i) => (
-                  <tr key={d.id}>
-                    <td style={{ color: "var(--text-muted)" }}>{i + 1}</td>
-                    <td className="monospace">{d.ip_address}</td>
-                    <td style={{ color: d.device_name ? "var(--text)" : "var(--text-muted)", fontSize: 13 }}>{d.device_name || "—"}</td>
-                    <td>{d.group_name}</td>
-                    <td>
-                      <span className={`badge badge-${d.auth_type}`}>
-                        {d.auth_type === "non_tacacs" ? "Non-Tacacs" : "Tacacs"}
-                      </span>
-                    </td>
-                    <td>{new Date(d.created_at).toLocaleDateString()}</td>
-                    <td>
-                      <div className="flex-gap">
-                        <button
-                          className="btn btn-success btn-sm"
-                          onClick={() => openAddToGroup(d)}
-                          title={`Add new IP to group "${d.group_name}" (${d.auth_type})`}
-                        >
-                          + Add IP
-                        </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(d)}>Edit</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(d)}>Delete</button>
-                      </div>
-                    </td>
+          <>
+            {/* Count summary */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Showing <strong style={{ color: "var(--text)" }}>
+                  {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, totalDevices)}
+                </strong> of <strong style={{ color: "var(--text)" }}>{totalDevices}</strong> device(s)
+              </div>
+              {totalPages > 1 && (
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Page <strong style={{ color: "var(--text)" }}>{safePage}</strong> of <strong style={{ color: "var(--text)" }}>{totalPages}</strong>
+                </div>
+              )}
+            </div>
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>IP Address</th>
+                    <th>Device Name</th>
+                    <th>Group Name</th>
+                    <th>Auth Type</th>
+                    <th>Added</th>
+                    <th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pagedDevices.map((d, i) => (
+                    <tr key={d.id}>
+                      <td style={{ color: "var(--text-muted)" }}>{(safePage - 1) * PAGE_SIZE + i + 1}</td>
+                      <td className="monospace">{d.ip_address}</td>
+                      <td style={{ color: d.device_name ? "var(--text)" : "var(--text-muted)", fontSize: 13 }}>{d.device_name || "—"}</td>
+                      <td>{d.group_name}</td>
+                      <td>
+                        <span className={`badge badge-${d.auth_type}`}>
+                          {d.auth_type === "non_tacacs" ? "Non-Tacacs" : "Tacacs"}
+                        </span>
+                      </td>
+                      <td>{new Date(d.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <div className="flex-gap">
+                          <button
+                            className="btn btn-success btn-sm"
+                            onClick={() => openAddToGroup(d)}
+                            title={`Add new IP to group "${d.group_name}" (${d.auth_type})`}
+                          >
+                            + Add IP
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(d)}>Edit</button>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(d)}>Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination current={safePage} total={totalPages} onChange={goToPage} />
+            )}
+          </>
         )}
       </div>
 
@@ -427,5 +463,51 @@ export default function DeviceManagement() {
         </Modal>
       )}
     </>
+  );
+}
+
+/* ── Pagination component ────────────────────────────────────────────────── */
+function Pagination({ current, total, onChange }) {
+  const pages = [];
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (current > 3)         pages.push("…");
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i);
+    if (current < total - 2) pages.push("…");
+    pages.push(total);
+  }
+
+  const btn = (content, page, disabled = false, active = false) => (
+    <button
+      key={content + "-" + page}
+      onClick={() => !disabled && page && onChange(page)}
+      disabled={disabled}
+      style={{
+        minWidth: 34, height: 34, padding: "0 10px",
+        borderRadius: "var(--radius)",
+        border: active ? "none" : "1px solid var(--border)",
+        background: active ? "var(--primary)" : disabled ? "transparent" : "var(--surface2)",
+        color: active ? "#fff" : disabled ? "var(--text-muted)" : "var(--text)",
+        fontWeight: active ? 700 : 400, fontSize: 13,
+        cursor: disabled ? "default" : "pointer",
+        transition: "background .15s",
+      }}
+    >
+      {content}
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+      {btn("← Prev", current - 1, current === 1)}
+      {pages.map((p, i) =>
+        p === "…"
+          ? <span key={`ellipsis-${i}`} style={{ color: "var(--text-muted)", fontSize: 13, padding: "0 4px" }}>…</span>
+          : btn(p, p, false, p === current)
+      )}
+      {btn("Next →", current + 1, current === total)}
+    </div>
   );
 }

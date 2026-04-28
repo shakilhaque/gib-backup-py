@@ -6,6 +6,7 @@
  *  - Create new user (admin or staff)
  *  - Edit user (name, email, role, status, password)
  *  - Delete user (cannot delete yourself)
+ *  - Pagination (20 per page)
  */
 import { useEffect, useState } from "react";
 import { getUsers, createUser, updateUser, deleteUser } from "../api/users";
@@ -22,6 +23,8 @@ const EMPTY_FORM = {
   password: "", role: "staff", is_active: true,
 };
 
+const PAGE_SIZE = 20;
+
 function parseUTC(d) {
   if (!d) return null;
   if (d.endsWith("Z") || d.includes("+")) return new Date(d);
@@ -37,6 +40,9 @@ export default function UsersPage({ currentUser }) {
   const [users,   setUsers]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);
+
+  // Pagination
+  const [page, setPage] = useState(1);
 
   // Modal state
   const [modal,   setModal]   = useState(null);  // null | "create" | "edit"
@@ -60,6 +66,13 @@ export default function UsersPage({ currentUser }) {
   };
 
   useEffect(() => { fetchUsers(); }, []);
+
+  /* ── Pagination ── */
+  const totalUsers = users.length;
+  const totalPages = Math.max(1, Math.ceil(totalUsers / PAGE_SIZE));
+  const safePage   = Math.min(page, totalPages);
+  const pagedUsers = users.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const goToPage   = (p) => setPage(Math.max(1, Math.min(p, totalPages)));
 
   const openCreate = () => {
     setForm(EMPTY_FORM);
@@ -128,58 +141,81 @@ export default function UsersPage({ currentUser }) {
 
       <div className="card">
         {loading ? <Spinner text="Loading users…" /> : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Username</th>
-                  <th>Full Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Last Login</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u, i) => (
-                  <tr key={u.id}>
-                    <td style={{ color: "var(--text-muted)" }}>{i + 1}</td>
-                    <td>
-                      <strong>{u.username}</strong>
-                      {u.id === currentUser?.id && (
-                        <span style={{ fontSize: 10, marginLeft: 6, color: "var(--primary)", background: "rgba(99,102,241,.15)", padding: "1px 6px", borderRadius: 4 }}>You</span>
-                      )}
-                    </td>
-                    <td>{u.full_name || <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                    <td style={{ fontSize: 12 }}>{u.email || <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
-                    <td>
-                      <span className={`badge ${u.role === "admin" ? "badge-tacacs" : "badge-gray"}`}>
-                        {u.role === "admin" ? "👑 Admin" : "🔧 IT Staff"}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`badge ${u.is_active ? "badge-success" : "badge-error"}`}>
-                        {u.is_active ? "● Active" : "○ Disabled"}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
-                      {fmtDateTime(u.last_login)}
-                    </td>
-                    <td>
-                      <div className="flex-gap">
-                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}>✎ Edit</button>
-                        {u.id !== currentUser?.id && (
-                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>× Delete</button>
-                        )}
-                      </div>
-                    </td>
+          <>
+            {/* Count summary */}
+            {totalUsers > 0 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                  Showing <strong style={{ color: "var(--text)" }}>
+                    {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, totalUsers)}
+                  </strong> of <strong style={{ color: "var(--text)" }}>{totalUsers}</strong> user(s)
+                </div>
+                {totalPages > 1 && (
+                  <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                    Page <strong style={{ color: "var(--text)" }}>{safePage}</strong> of <strong style={{ color: "var(--text)" }}>{totalPages}</strong>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Username</th>
+                    <th>Full Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Last Login</th>
+                    <th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {pagedUsers.map((u, i) => (
+                    <tr key={u.id}>
+                      <td style={{ color: "var(--text-muted)" }}>{(safePage - 1) * PAGE_SIZE + i + 1}</td>
+                      <td>
+                        <strong>{u.username}</strong>
+                        {u.id === currentUser?.id && (
+                          <span style={{ fontSize: 10, marginLeft: 6, color: "var(--primary)", background: "rgba(99,102,241,.15)", padding: "1px 6px", borderRadius: 4 }}>You</span>
+                        )}
+                      </td>
+                      <td>{u.full_name || <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                      <td style={{ fontSize: 12 }}>{u.email || <span style={{ color: "var(--text-muted)" }}>—</span>}</td>
+                      <td>
+                        <span className={`badge ${u.role === "admin" ? "badge-tacacs" : "badge-gray"}`}>
+                          {u.role === "admin" ? "👑 Admin" : "🔧 IT Staff"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${u.is_active ? "badge-success" : "badge-error"}`}>
+                          {u.is_active ? "● Active" : "○ Disabled"}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                        {fmtDateTime(u.last_login)}
+                      </td>
+                      <td>
+                        <div className="flex-gap">
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(u)}>✎ Edit</button>
+                          {u.id !== currentUser?.id && (
+                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>× Delete</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <Pagination current={safePage} total={totalPages} onChange={goToPage} />
+            )}
+          </>
         )}
       </div>
 
@@ -277,5 +313,51 @@ export default function UsersPage({ currentUser }) {
         </Modal>
       )}
     </>
+  );
+}
+
+/* ── Pagination component ────────────────────────────────────────────────── */
+function Pagination({ current, total, onChange }) {
+  const pages = [];
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (current > 3)         pages.push("…");
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) pages.push(i);
+    if (current < total - 2) pages.push("…");
+    pages.push(total);
+  }
+
+  const btn = (content, page, disabled = false, active = false) => (
+    <button
+      key={content + "-" + page}
+      onClick={() => !disabled && page && onChange(page)}
+      disabled={disabled}
+      style={{
+        minWidth: 34, height: 34, padding: "0 10px",
+        borderRadius: "var(--radius)",
+        border: active ? "none" : "1px solid var(--border)",
+        background: active ? "var(--primary)" : disabled ? "transparent" : "var(--surface2)",
+        color: active ? "#fff" : disabled ? "var(--text-muted)" : "var(--text)",
+        fontWeight: active ? 700 : 400, fontSize: 13,
+        cursor: disabled ? "default" : "pointer",
+        transition: "background .15s",
+      }}
+    >
+      {content}
+    </button>
+  );
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+      {btn("← Prev", current - 1, current === 1)}
+      {pages.map((p, i) =>
+        p === "…"
+          ? <span key={`ellipsis-${i}`} style={{ color: "var(--text-muted)", fontSize: 13, padding: "0 4px" }}>…</span>
+          : btn(p, p, false, p === current)
+      )}
+      {btn("Next →", current + 1, current === total)}
+    </div>
   );
 }
